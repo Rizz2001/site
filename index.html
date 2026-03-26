@@ -77,7 +77,7 @@
         /* --- GRID DE PRODUCTOS --- */
         .productos-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; padding: 15px 20px; }
         .producto-card { background: white; border-radius: 16px; padding: 12px; display: flex; flex-direction: column; position: relative; box-shadow: 0 2px 8px rgba(0,0,0,0.04); transition: 0.3s; }
-        .producto-card img { width: 100%; height: 100px; object-fit: contain; margin-bottom: 10px; }
+        .producto-card img { width: 100%; height: 100px; object-fit: contain; margin-bottom: 10px; border-radius: 8px; }
         .producto-titulo { font-size: 12px; font-weight: 600; line-height: 1.3; margin-bottom: 2px; color: var(--texto-oscuro); }
         .producto-stock { font-size: 10px; color: var(--texto-claro); margin-bottom: 5px; }
         .producto-precio { font-size: 15px; font-weight: 700; color: var(--dorado); margin-top: auto; }
@@ -150,7 +150,7 @@
 
     <div class="search-container">
         <i class="fa-solid fa-magnifying-glass"></i>
-        <input type="text" id="buscador" placeholder="Buscar productos..." onkeyup="buscarProducto()">
+        <input type="text" id="buscador" placeholder="Buscar productos..." onkeyup="aplicarFiltros()">
     </div>
 
     <div class="categorias-scroll" id="contenedorCategorias">
@@ -229,13 +229,10 @@
         <div class="checkout-box">
             <p class="box-title">Tus Datos</p>
             <p style="font-size: 12px; color: var(--texto-claro); margin-bottom: 15px;">Guarda tu información para que tus próximas compras sean más rápidas.</p>
-            
             <label style="font-size: 12px; font-weight: bold;">Nombre o Apodo</label>
             <input type="text" id="perfilNombre" class="input-text" placeholder="Ej: Juan Pérez" style="margin-bottom: 15px;">
-            
             <label style="font-size: 12px; font-weight: bold;">Dirección de Delivery</label>
             <input type="text" id="perfilDireccion" class="input-text" placeholder="Ej: Av. Principal, Casa #10">
-            
             <button class="btn-enviar" onclick="guardarPerfil()">Guardar Datos</button>
         </div>
     </div>
@@ -257,44 +254,27 @@
         let carrito = {};
         let tasaOficial = 36.25; 
         let totalCarrito = 0;
+        let categoriaActual = 'Todos'; // Variable global para recordar la categoría elegida
 
-        // Iniciar Modo Oscuro si estaba guardado
-        if(localStorage.getItem('gc_dark') === 'true') {
-            document.body.classList.add('dark-mode');
-        }
+        // Iniciar Modo Oscuro
+        if(localStorage.getItem('gc_dark') === 'true') document.body.classList.add('dark-mode');
 
-        // 1. Age Gate
-        if (localStorage.getItem('ageVerified') === 'true') {
-            document.getElementById('age-gate').style.display = 'none';
-        }
-        function aceptarEdad() {
-            localStorage.setItem('ageVerified', 'true');
-            document.getElementById('age-gate').style.display = 'none';
-        }
-        function rechazarEdad() {
-            window.location.href = "https://www.google.com";
-        }
+        // Age Gate
+        if (localStorage.getItem('ageVerified') === 'true') document.getElementById('age-gate').style.display = 'none';
+        function aceptarEdad() { localStorage.setItem('ageVerified', 'true'); document.getElementById('age-gate').style.display = 'none'; }
+        function rechazarEdad() { window.location.href = "https://www.google.com"; }
 
-        // 2. Obtener Tasa 
+        // Obtener Tasa
         async function obtenerTasa() {
-            try {
-                document.getElementById('tasaValor').innerText = tasaOficial.toFixed(2) + " Bs";
-            } catch (error) {
-                document.getElementById('tasaValor').innerText = tasaOficial.toFixed(2) + " Bs";
-            }
+            try { document.getElementById('tasaValor').innerText = tasaOficial.toFixed(2) + " Bs"; } 
+            catch (error) { document.getElementById('tasaValor').innerText = tasaOficial.toFixed(2) + " Bs"; }
         }
 
-        // 3. Cargar CSV con PAPAPARSE (Magia restaurada)
+        // Leer CSV con PapaParse
         const fetchCSV = (u) => new Promise((resolve, reject) => {
-            Papa.parse(u, { 
-                download: true, 
-                encoding: "latin-1", 
-                complete: (r) => resolve(r.data), 
-                error: (err) => reject(err)
-            })
+            Papa.parse(u, { download: true, encoding: "latin-1", complete: (r) => resolve(r.data), error: (err) => reject(err) })
         });
 
-        // Nombres de archivos originales que acabas de enviar
         async function cargarInventario() {
             obtenerTasa();
             try {
@@ -307,10 +287,19 @@
                 pRaw.forEach(r => {
                     if (r.length >= 5) {
                         let cod = r[r.length-4]?.trim(), usd = r[r.length-1]?.trim();
+                        let categoriaOriginal = r[r.length-5]?.trim() || "Otros";
+                        let categoriaMascara = categoriaOriginal.toUpperCase();
+
+                        // FILTRO: Excluir Frutería y Charcutería
+                        if (categoriaMascara === "CHARCUTERIA" || categoriaMascara === "FRUTERIA") {
+                            return; 
+                        }
+
                         if (cod && !isNaN(cod) && usd?.includes(',')) {
                             mapa[cod] = {
+                                codigo: cod,
                                 Nombre: r[r.length-3]?.trim(),
-                                Cat: r[r.length-5]?.trim() || "Otros",
+                                Cat: categoriaOriginal,
                                 PrecioStr: usd,
                                 PrecioNum: parseFloat(usd.replace('.','').replace(',','.'))
                             };
@@ -327,21 +316,85 @@
                 });
 
                 inventario = Object.values(mapa).filter(p => p.Nombre).map(p => ({ ...p, Stock: p.Stock || "0,00" }));
-                
                 generarCategorias();
-                mostrarProductos(inventario);
+                aplicarFiltros(); // En lugar de mostrarProductos directo, aplicamos filtros base
             } catch(e) {
-                console.error("Error al cargar inventarios:", e);
-                document.getElementById('lista-productos').innerHTML = '<p style="text-align:center; grid-column:span 2; color: red; margin-top: 20px;">Error al leer los archivos. Revisa la consola.</p>';
+                document.getElementById('lista-productos').innerHTML = '<p style="text-align:center; grid-column:span 2; color: red; margin-top: 20px;">Error al leer archivos.</p>';
             }
         }
 
-        // 4. Mostrar Productos
+        // --- SISTEMA DE BÚSQUEDA INTELIGENTE (FUZZY SEARCH) ---
+
+        // Función matemática para calcular similitud de palabras (Levenshtein)
+        function levenshtein(a, b) {
+            const matrix = [];
+            for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+            for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+            for (let i = 1; i <= b.length; i++) {
+                for (let j = 1; j <= a.length; j++) {
+                    if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                        matrix[i][j] = matrix[i - 1][j - 1];
+                    } else {
+                        matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+                    }
+                }
+            }
+            return matrix[b.length][a.length];
+        }
+
+        // Función para quitar acentos y normalizar texto
+        function quitarAcentos(texto) {
+            return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        }
+
+        // --- LÓGICA DE FILTROS COMBINADOS (Categoría + Búsqueda) ---
+        function filtrarCategoria(cat, btn) {
+            categoriaActual = cat; // Recordamos en qué categoría estamos
+            document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+            if(btn) btn.classList.add('active');
+            aplicarFiltros(); // Procesamos la categoría + lo que sea que esté escrito en el buscador
+        }
+
+        function aplicarFiltros() {
+            let q = quitarAcentos(document.getElementById('buscador').value.trim());
+            let resultado = inventario;
+
+            // 1. Filtrar por Categoría Seleccionada
+            if (categoriaActual !== 'Todos') {
+                resultado = resultado.filter(p => p.Cat === categoriaActual);
+            }
+
+            // 2. Filtrar por Texto de Búsqueda Inteligente
+            if (q !== '') {
+                let terms = q.split(' ').filter(t => t.length > 0);
+                
+                resultado = resultado.filter(p => {
+                    let nombreNorm = quitarAcentos(p.Nombre);
+                    let wordsInName = nombreNorm.split(' ');
+                    
+                    // Cada palabra escrita por el usuario debe coincidir con algo del producto
+                    return terms.every(term => {
+                        // Coincidencia exacta o dentro de la palabra (Ej: "ron" dentro de "marron")
+                        if (nombreNorm.includes(term)) return true;
+                        
+                        // Tolerancia a errores (Ej: "visky" vs "whisky")
+                        return wordsInName.some(w => {
+                            let maxErrores = term.length > 4 ? 2 : 1; // Si la palabra es larga, perdonamos 2 letras de error
+                            return levenshtein(term, w) <= maxErrores;
+                        });
+                    });
+                });
+            }
+
+            mostrarProductos(resultado);
+        }
+
+        // Mostrar Productos en Pantalla
         function mostrarProductos(lista) {
             const cont = document.getElementById('lista-productos');
             cont.innerHTML = '';
             if(lista.length === 0) { 
-                cont.innerHTML = '<p style="text-align:center; grid-column:span 2; color: var(--texto-claro); margin-top: 20px;">No se encontraron productos.</p>'; 
+                cont.innerHTML = '<p style="text-align:center; grid-column:span 2; color: var(--texto-claro); margin-top: 20px;">No se encontraron productos en esta categoría o búsqueda.</p>'; 
                 return; 
             }
 
@@ -349,7 +402,7 @@
                 const d = document.createElement('div');
                 d.className = 'producto-card';
                 d.innerHTML = `
-                    <img src="logo.png" alt="${p.Nombre}" onerror="this.src='https://via.placeholder.com/150'">
+                    <img src="img/${p.codigo}.jpg" alt="${p.Nombre}" onerror="this.src='logo.png'">
                     <h3 class="producto-titulo">${p.Nombre}</h3>
                     <p class="producto-stock">Disp: ${p.Stock}</p>
                     <p class="producto-precio">$${p.PrecioStr}</p>
@@ -359,7 +412,7 @@
             });
         }
 
-        // 5. Categorías y Buscador
+        // Generar Botones de Categorías
         function generarCategorias() {
             const cont = document.getElementById('contenedorCategorias');
             let categorias = [...new Set(inventario.map(p => p.Cat))].filter(c => c);
@@ -367,20 +420,6 @@
             categorias.forEach(c => {
                 cont.innerHTML += `<button class="cat-btn" onclick="filtrarCategoria('${c}', this)">${c}</button>`;
             });
-        }
-
-        function filtrarCategoria(cat, btn) {
-            document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            if(cat === 'Todos') mostrarProductos(inventario);
-            else mostrarProductos(inventario.filter(p => p.Cat === cat));
-        }
-
-        function buscarProducto() {
-            let q = document.getElementById('buscador').value.toLowerCase();
-            let res = inventario.filter(p => p.Nombre.toLowerCase().includes(q));
-            mostrarProductos(res);
-            document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
         }
 
         // --- NAVEGACIÓN INFERIOR ---
@@ -393,7 +432,7 @@
             setActiveNav('nav-home');
             window.scrollTo({top: 0, behavior: 'smooth'});
             document.getElementById('buscador').value = '';
-            filtrarCategoria('Todos', document.querySelector('.cat-btn'));
+            filtrarCategoria('Todos', document.querySelector('.cat-btn')); // Resetea a Todos al ir al inicio
         }
 
         function abrirPerfil() {
@@ -406,7 +445,7 @@
         function guardarPerfil() {
             localStorage.setItem('gc_nombre', document.getElementById('perfilNombre').value);
             localStorage.setItem('gc_direccion', document.getElementById('perfilDireccion').value);
-            mostrarToast("Datos guardados correctamente");
+            mostrarToast("Datos guardados");
             cerrarModal('modal-perfil', 'nav-home');
         }
 
@@ -426,13 +465,10 @@
             setActiveNav('nav-home'); 
         }
 
-        // --- 6. Carrito ---
+        // --- CARRITO DE COMPRAS ---
         function agregarAlCarrito(nombre, precio) {
-            if(carrito[nombre]) {
-                carrito[nombre].cantidad++;
-            } else {
-                carrito[nombre] = { precio: precio, cantidad: 1 };
-            }
+            if(carrito[nombre]) carrito[nombre].cantidad++;
+            else carrito[nombre] = { precio: precio, cantidad: 1 };
             actualizarCartCount();
             mostrarToast("Añadido al carrito");
         }
@@ -488,15 +524,13 @@
             else renderizarCarrito();
         }
 
-        // --- 7. Checkout Logic ---
+        // --- CHECKOUT ---
         function toggleDireccion() {
             let met = document.querySelector('input[name="metodoEntrega"]:checked').value;
             let dirInput = document.getElementById('direccionDelivery');
             if(met === 'Delivery') {
                 dirInput.style.display = 'block';
-                if(localStorage.getItem('gc_direccion') && !dirInput.value) {
-                    dirInput.value = localStorage.getItem('gc_direccion');
-                }
+                if(localStorage.getItem('gc_direccion') && !dirInput.value) dirInput.value = localStorage.getItem('gc_direccion');
             } else {
                 dirInput.style.display = 'none';
             }
@@ -530,7 +564,7 @@
             setTimeout(() => t.remove(), 2500);
         }
 
-        // --- 8. Envío a WhatsApp ---
+        // --- ENVÍO A WHATSAPP ---
         function enviarPedido() {
             let nombreUser = localStorage.getItem('gc_nombre') || 'un cliente';
             let msg = `Hola Gran Catador, soy ${nombreUser}. Quiero hacer el siguiente pedido:%0A%0A`;
@@ -571,7 +605,6 @@
             window.open(`https://wa.me/584245496366?text=${msg}`, '_blank');
         }
 
-        // Iniciar App
         window.onload = cargarInventario;
     </script>
 </body>
