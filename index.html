@@ -150,7 +150,7 @@
 
     <div class="search-container">
         <i class="fa-solid fa-magnifying-glass"></i>
-        <input type="text" id="buscador" placeholder="Buscar productos..." onkeyup="aplicarFiltros()">
+        <input type="text" id="buscador" placeholder="Buscar productos..." onkeyup="debounceFiltros()">
     </div>
 
     <div class="categorias-scroll" id="contenedorCategorias">
@@ -246,7 +246,7 @@
             <span style="font-weight:600; font-size: 14px;">🌙 Modo Oscuro</span>
             <input type="checkbox" id="toggleDarkMode" onchange="toggleDark()" style="width:20px; height:20px; accent-color: var(--dorado);">
         </div>
-        <p style="text-align: center; margin-top: 30px; font-size: 12px; color: var(--texto-claro);">Versión 2.0</p>
+        <p style="text-align: center; margin-top: 30px; font-size: 12px; color: var(--texto-claro);">Versión 2.0.1 (Optimizada)</p>
     </div>
 
     <script>
@@ -255,6 +255,7 @@
         let tasaOficial = 36.25; 
         let totalCarrito = 0;
         let categoriaActual = 'Todos';
+        let debounceTimer; // Variable para controlar el buscador relajado
 
         // Iniciar Modo Oscuro
         if(localStorage.getItem('gc_dark') === 'true') document.body.classList.add('dark-mode');
@@ -270,20 +271,16 @@
             catch (error) { document.getElementById('tasaValor').innerText = tasaOficial.toFixed(2) + " Bs"; }
         }
 
-        // --- SISTEMA INTELIGENTE DE IMÁGENES (FALLBACK) ---
-        // Intenta cargar la foto en .jpg, luego en .png, luego .jpeg y .webp. Si fallan todas, pone el logo.
+        // --- SISTEMA DE IMÁGENES (FALLBACK) ---
         function imgFallback(imgElement, codigoProducto) {
             let attempts = imgElement.dataset.attempts ? parseInt(imgElement.dataset.attempts) : 0;
-            // Aquí puedes agregar más formatos si los usas
             const formatos = ['jpg', 'png', 'jpeg', 'webp', 'gif']; 
             
             attempts++;
             if (attempts < formatos.length) {
-                // Guarda en memoria qué intento llevamos y cambia el enlace
                 imgElement.dataset.attempts = attempts;
                 imgElement.src = `img/${codigoProducto}.${formatos[attempts]}`;
             } else {
-                // Si ya intentó todos los formatos y fallaron, pone el logo y se detiene
                 imgElement.src = 'logo.png';
                 imgElement.onerror = null; 
             }
@@ -309,10 +306,7 @@
                         let categoriaOriginal = r[r.length-5]?.trim() || "Otros";
                         let categoriaMascara = categoriaOriginal.toUpperCase();
 
-                        // FILTRO: Excluir Frutería y Charcutería
-                        if (categoriaMascara === "CHARCUTERIA" || categoriaMascara === "FRUTERIA") {
-                            return; 
-                        }
+                        if (categoriaMascara === "CHARCUTERIA" || categoriaMascara === "FRUTERIA") return; 
 
                         if (cod && !isNaN(cod) && usd?.includes(',')) {
                             mapa[cod] = {
@@ -342,7 +336,7 @@
             }
         }
 
-        // --- SISTEMA DE BÚSQUEDA INTELIGENTE (FUZZY SEARCH) ---
+        // --- SISTEMA DE BÚSQUEDA INTELIGENTE OPTIMIZADO ---
         function levenshtein(a, b) {
             const matrix = [];
             for (let i = 0; i <= b.length; i++) matrix[i] = [i];
@@ -361,6 +355,12 @@
 
         function quitarAcentos(texto) {
             return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        }
+
+        // OPTIMIZACIÓN: Debounce. Evita que la app busque letra por letra. Espera a que el cliente deje de escribir.
+        function debounceFiltros() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(aplicarFiltros, 300);
         }
 
         function filtrarCategoria(cat, btn) {
@@ -398,28 +398,35 @@
             mostrarProductos(resultado);
         }
 
-        // --- MOSTRAR PRODUCTOS (CON EL NUEVO COMPROBADOR DE IMÁGENES) ---
+        // --- MOSTRAR PRODUCTOS OPTIMIZADO (DocumentFragment + Lazy Loading) ---
         function mostrarProductos(lista) {
             const cont = document.getElementById('lista-productos');
             cont.innerHTML = '';
+            
             if(lista.length === 0) { 
                 cont.innerHTML = '<p style="text-align:center; grid-column:span 2; color: var(--texto-claro); margin-top: 20px;">No se encontraron productos en esta categoría o búsqueda.</p>'; 
                 return; 
             }
 
+            // OPTIMIZACIÓN: DocumentFragment evita redibujar la pantalla cientos de veces
+            const fragmento = document.createDocumentFragment();
+
             lista.forEach(p => {
                 const d = document.createElement('div');
                 d.className = 'producto-card';
+                // OPTIMIZACIÓN: Se agrega loading="lazy" a la imagen
                 d.innerHTML = `
-                    <img src="img/${p.codigo}.jpg" data-attempts="0" onerror="imgFallback(this, '${p.codigo}')" alt="${p.Nombre}">
-                    
+                    <img loading="lazy" src="img/${p.codigo}.jpg" data-attempts="0" onerror="imgFallback(this, '${p.codigo}')" alt="${p.Nombre}">
                     <h3 class="producto-titulo">${p.Nombre}</h3>
                     <p class="producto-stock">Disp: ${p.Stock}</p>
                     <p class="producto-precio">$${p.PrecioStr}</p>
                     <button class="btn-add" onclick="agregarAlCarrito('${p.Nombre}', ${p.PrecioNum})"><i class="fa-solid fa-plus"></i></button>
                 `;
-                cont.appendChild(d);
+                fragmento.appendChild(d);
             });
+            
+            // Inyectamos todo de un solo golpe (Ahorra muchísima RAM y procesador)
+            cont.appendChild(fragmento);
         }
 
         function generarCategorias() {
