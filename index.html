@@ -72,7 +72,7 @@
         .bottom-nav a { color: var(--texto-claro); font-size: 22px; text-decoration: none; transition: color 0.3s; }
         .bottom-nav a.active { color: var(--azul-rey); }
 
-        /* --- MODAL CARRITO (Adaptado al nuevo estilo) --- */
+        /* --- MODAL CARRITO --- */
         #modal-cart { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--fondo); z-index: 2000; display: none; flex-direction: column; padding: 25px; overflow-y: auto; }
         .cart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .cart-header h2 { color: var(--azul-rey); font-size: 20px; }
@@ -100,7 +100,6 @@
         
         .btn-enviar { width: 100%; background: var(--verde-btn); color: white; border: none; padding: 15px; border-radius: 12px; font-weight: bold; font-size: 15px; cursor: pointer; margin-top: 15px; box-shadow: 0 4px 10px rgba(37, 211, 102, 0.3); }
 
-        /* Toast */
         #toast-container { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); z-index: 3000; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
         .toast { background: rgba(37, 211, 102, 0.95); color: white; padding: 10px 20px; border-radius: 30px; font-size: 12px; font-weight: 600; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
     </style>
@@ -131,7 +130,7 @@
 
     <div class="categorias-scroll" id="contenedorCategorias">
         <button class="cat-btn active" onclick="filtrarCategoria('Todos', this)">Todos</button>
-        </div>
+    </div>
 
     <div class="productos-grid" id="lista-productos">
         <p style="text-align:center; grid-column: span 2;">Cargando inventario...</p>
@@ -200,7 +199,7 @@
     <script>
         let inventario = [];
         let carrito = {};
-        let tasaOficial = 36.25; // Tasa por defecto si falla la API
+        let tasaOficial = 36.25; 
         let totalCarrito = 0;
 
         // 1. Age Gate
@@ -215,25 +214,23 @@
             window.location.href = "https://www.google.com";
         }
 
-        // 2. Obtener Tasa (Simulación o Fetch real si tienes endpoint)
+        // 2. Obtener Tasa 
         async function obtenerTasa() {
             try {
-                // Aquí podrías poner una API real de DolarToday o BCV.
-                // Por ahora se deja estática o simula la carga.
                 document.getElementById('tasaValor').innerText = tasaOficial.toFixed(2) + " Bs";
             } catch (error) {
                 document.getElementById('tasaValor').innerText = tasaOficial.toFixed(2) + " Bs";
             }
         }
 
-        // 3. Cargar CSV
+        // 3. Cargar CSV (Función original restaurada para evitar bloqueos)
         async function fetchCSV(url) {
             try {
-                const res = await fetch(url + '?t=' + new Date().getTime());
-                if (!res.ok) return [];
+                const res = await fetch(url);
                 const text = await res.text();
                 return text.split('\n').map(row => row.split(';'));
             } catch (e) {
+                console.error("Error cargando CSV: ", e);
                 return [];
             }
         }
@@ -274,16 +271,18 @@
             mostrarProductos(inventario);
         }
 
-        // 4. Mostrar Productos en la UI
+        // 4. Mostrar Productos
         function mostrarProductos(lista) {
             const cont = document.getElementById('lista-productos');
             cont.innerHTML = '';
-            if(lista.length === 0) { cont.innerHTML = '<p style="text-align:center; grid-column:span 2;">No hay productos</p>'; return; }
+            if(lista.length === 0) { 
+                cont.innerHTML = '<p style="text-align:center; grid-column:span 2; color: red; margin-top: 20px;">No se encontraron productos.</p>'; 
+                return; 
+            }
 
             lista.forEach(p => {
                 const d = document.createElement('div');
                 d.className = 'producto-card';
-                // La imagen es placeholder, puedes cambiar logo.png por la ruta dinámica si la tienes
                 d.innerHTML = `
                     <img src="logo.png" alt="${p.Nombre}" onerror="this.src='https://via.placeholder.com/150'">
                     <h3 class="producto-titulo">${p.Nombre}</h3>
@@ -299,6 +298,7 @@
         function generarCategorias() {
             const cont = document.getElementById('contenedorCategorias');
             let categorias = [...new Set(inventario.map(p => p.Cat))].filter(c => c);
+            cont.innerHTML = `<button class="cat-btn active" onclick="filtrarCategoria('Todos', this)">Todos</button>`;
             categorias.forEach(c => {
                 cont.innerHTML += `<button class="cat-btn" onclick="filtrarCategoria('${c}', this)">${c}</button>`;
             });
@@ -315,7 +315,6 @@
             let q = document.getElementById('buscador').value.toLowerCase();
             let res = inventario.filter(p => p.Nombre.toLowerCase().includes(q));
             mostrarProductos(res);
-            // Quitar active de las categorias al buscar
             document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
         }
 
@@ -403,7 +402,7 @@
                 let vueltoBs = vueltoUsd * tasaOficial;
                 res.style.display = 'block';
                 res.style.color = 'var(--verde-btn)';
-                res.innerHTML = `Vuelto: <b>$${vueltoUsd.toFixed(2)}</b> o <b>${vueltoBs.toLocaleString('es-VE')} Bs</b>`;
+                res.innerHTML = `Vuelto: <b>$${vueltoUsd.toFixed(2)}</b> o <b>${vueltoBs.toLocaleString('es-VE', {minimumFractionDigits:2})} Bs</b>`;
             } else {
                 res.style.display = 'none';
             }
@@ -457,7 +456,7 @@
             window.open(`https://wa.me/584245496366?text=${msg}`, '_blank');
         }
 
-        // Iniciar
+        // Iniciar App
         window.onload = cargarInventario;
     </script>
 </body>
