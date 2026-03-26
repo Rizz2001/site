@@ -254,7 +254,7 @@
         let carrito = {};
         let tasaOficial = 36.25; 
         let totalCarrito = 0;
-        let categoriaActual = 'Todos'; // Variable global para recordar la categoría elegida
+        let categoriaActual = 'Todos';
 
         // Iniciar Modo Oscuro
         if(localStorage.getItem('gc_dark') === 'true') document.body.classList.add('dark-mode');
@@ -268,6 +268,25 @@
         async function obtenerTasa() {
             try { document.getElementById('tasaValor').innerText = tasaOficial.toFixed(2) + " Bs"; } 
             catch (error) { document.getElementById('tasaValor').innerText = tasaOficial.toFixed(2) + " Bs"; }
+        }
+
+        // --- SISTEMA INTELIGENTE DE IMÁGENES (FALLBACK) ---
+        // Intenta cargar la foto en .jpg, luego en .png, luego .jpeg y .webp. Si fallan todas, pone el logo.
+        function imgFallback(imgElement, codigoProducto) {
+            let attempts = imgElement.dataset.attempts ? parseInt(imgElement.dataset.attempts) : 0;
+            // Aquí puedes agregar más formatos si los usas
+            const formatos = ['jpg', 'png', 'jpeg', 'webp', 'gif']; 
+            
+            attempts++;
+            if (attempts < formatos.length) {
+                // Guarda en memoria qué intento llevamos y cambia el enlace
+                imgElement.dataset.attempts = attempts;
+                imgElement.src = `img/${codigoProducto}.${formatos[attempts]}`;
+            } else {
+                // Si ya intentó todos los formatos y fallaron, pone el logo y se detiene
+                imgElement.src = 'logo.png';
+                imgElement.onerror = null; 
+            }
         }
 
         // Leer CSV con PapaParse
@@ -317,15 +336,13 @@
 
                 inventario = Object.values(mapa).filter(p => p.Nombre).map(p => ({ ...p, Stock: p.Stock || "0,00" }));
                 generarCategorias();
-                aplicarFiltros(); // En lugar de mostrarProductos directo, aplicamos filtros base
+                aplicarFiltros(); 
             } catch(e) {
                 document.getElementById('lista-productos').innerHTML = '<p style="text-align:center; grid-column:span 2; color: red; margin-top: 20px;">Error al leer archivos.</p>';
             }
         }
 
         // --- SISTEMA DE BÚSQUEDA INTELIGENTE (FUZZY SEARCH) ---
-
-        // Función matemática para calcular similitud de palabras (Levenshtein)
         function levenshtein(a, b) {
             const matrix = [];
             for (let i = 0; i <= b.length; i++) matrix[i] = [i];
@@ -342,29 +359,25 @@
             return matrix[b.length][a.length];
         }
 
-        // Función para quitar acentos y normalizar texto
         function quitarAcentos(texto) {
             return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
         }
 
-        // --- LÓGICA DE FILTROS COMBINADOS (Categoría + Búsqueda) ---
         function filtrarCategoria(cat, btn) {
-            categoriaActual = cat; // Recordamos en qué categoría estamos
+            categoriaActual = cat; 
             document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
             if(btn) btn.classList.add('active');
-            aplicarFiltros(); // Procesamos la categoría + lo que sea que esté escrito en el buscador
+            aplicarFiltros(); 
         }
 
         function aplicarFiltros() {
             let q = quitarAcentos(document.getElementById('buscador').value.trim());
             let resultado = inventario;
 
-            // 1. Filtrar por Categoría Seleccionada
             if (categoriaActual !== 'Todos') {
                 resultado = resultado.filter(p => p.Cat === categoriaActual);
             }
 
-            // 2. Filtrar por Texto de Búsqueda Inteligente
             if (q !== '') {
                 let terms = q.split(' ').filter(t => t.length > 0);
                 
@@ -372,14 +385,10 @@
                     let nombreNorm = quitarAcentos(p.Nombre);
                     let wordsInName = nombreNorm.split(' ');
                     
-                    // Cada palabra escrita por el usuario debe coincidir con algo del producto
                     return terms.every(term => {
-                        // Coincidencia exacta o dentro de la palabra (Ej: "ron" dentro de "marron")
                         if (nombreNorm.includes(term)) return true;
-                        
-                        // Tolerancia a errores (Ej: "visky" vs "whisky")
                         return wordsInName.some(w => {
-                            let maxErrores = term.length > 4 ? 2 : 1; // Si la palabra es larga, perdonamos 2 letras de error
+                            let maxErrores = term.length > 4 ? 2 : 1; 
                             return levenshtein(term, w) <= maxErrores;
                         });
                     });
@@ -389,7 +398,7 @@
             mostrarProductos(resultado);
         }
 
-        // Mostrar Productos en Pantalla
+        // --- MOSTRAR PRODUCTOS (CON EL NUEVO COMPROBADOR DE IMÁGENES) ---
         function mostrarProductos(lista) {
             const cont = document.getElementById('lista-productos');
             cont.innerHTML = '';
@@ -402,7 +411,8 @@
                 const d = document.createElement('div');
                 d.className = 'producto-card';
                 d.innerHTML = `
-                    <img src="img/${p.codigo}.jpg" alt="${p.Nombre}" onerror="this.src='logo.png'">
+                    <img src="img/${p.codigo}.jpg" data-attempts="0" onerror="imgFallback(this, '${p.codigo}')" alt="${p.Nombre}">
+                    
                     <h3 class="producto-titulo">${p.Nombre}</h3>
                     <p class="producto-stock">Disp: ${p.Stock}</p>
                     <p class="producto-precio">$${p.PrecioStr}</p>
@@ -412,7 +422,6 @@
             });
         }
 
-        // Generar Botones de Categorías
         function generarCategorias() {
             const cont = document.getElementById('contenedorCategorias');
             let categorias = [...new Set(inventario.map(p => p.Cat))].filter(c => c);
@@ -432,7 +441,7 @@
             setActiveNav('nav-home');
             window.scrollTo({top: 0, behavior: 'smooth'});
             document.getElementById('buscador').value = '';
-            filtrarCategoria('Todos', document.querySelector('.cat-btn')); // Resetea a Todos al ir al inicio
+            filtrarCategoria('Todos', document.querySelector('.cat-btn')); 
         }
 
         function abrirPerfil() {
