@@ -12,6 +12,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    
     <style>
         :root {
             --azul-rey: #0B132B; 
@@ -282,54 +284,56 @@
             }
         }
 
-        // 3. Cargar CSV
-        async function fetchCSV(url) {
-            try {
-                // Forzamos la descarga para evitar el caché del navegador en las pruebas
-                const res = await fetch(url + '?v=' + new Date().getTime());
-                const text = await res.text();
-                return text.split('\n').map(row => row.split(';'));
-            } catch (e) {
-                console.error("Error cargando CSV: ", e);
-                return [];
-            }
-        }
+        // 3. Cargar CSV con PAPAPARSE (Magia restaurada)
+        const fetchCSV = (u) => new Promise((resolve, reject) => {
+            Papa.parse(u, { 
+                download: true, 
+                encoding: "latin-1", 
+                complete: (r) => resolve(r.data), 
+                error: (err) => reject(err)
+            })
+        });
 
-        // --- AQUI ESTAN LOS NUEVOS NOMBRES ---
+        // Nombres de archivos originales que acabas de enviar
         async function cargarInventario() {
             obtenerTasa();
-            const [pRaw, sRaw] = await Promise.all([
-                fetchCSV("precios.csv"), // Archivo de precios
-                fetchCSV("unidad.csv")   // Archivo de stock/unidad
-            ]);
+            try {
+                const [pRaw, sRaw] = await Promise.all([
+                    fetchCSV("Inventario Fisico general precio por unidad.csv"),
+                    fetchCSV("inventario por existencia.csv")
+                ]);
 
-            let mapa = {};
-            pRaw.forEach(r => {
-                if (r.length >= 5) {
-                    let cod = r[r.length-4]?.trim(), usd = r[r.length-1]?.trim();
-                    if (cod && !isNaN(cod) && usd?.includes(',')) {
-                        mapa[cod] = {
-                            Nombre: r[r.length-3]?.trim(),
-                            Cat: r[r.length-5]?.trim() || "Otros",
-                            PrecioStr: usd,
-                            PrecioNum: parseFloat(usd.replace('.','').replace(',','.'))
-                        };
+                let mapa = {};
+                pRaw.forEach(r => {
+                    if (r.length >= 5) {
+                        let cod = r[r.length-4]?.trim(), usd = r[r.length-1]?.trim();
+                        if (cod && !isNaN(cod) && usd?.includes(',')) {
+                            mapa[cod] = {
+                                Nombre: r[r.length-3]?.trim(),
+                                Cat: r[r.length-5]?.trim() || "Otros",
+                                PrecioStr: usd,
+                                PrecioNum: parseFloat(usd.replace('.','').replace(',','.'))
+                            };
+                        }
                     }
-                }
-            });
+                });
 
-            sRaw.forEach(r => {
-                let i = r.indexOf("Existencia");
-                if (i !== -1 && r.length > i + 8) {
-                    let cod = r[i+2]?.trim();
-                    if (mapa[cod]) mapa[cod].Stock = r[i+8]?.trim();
-                }
-            });
+                sRaw.forEach(r => {
+                    let i = r.indexOf("Existencia");
+                    if (i !== -1 && r.length > i + 8) {
+                        let cod = r[i+2]?.trim();
+                        if (mapa[cod]) mapa[cod].Stock = r[i+8]?.trim();
+                    }
+                });
 
-            inventario = Object.values(mapa).filter(p => p.Nombre).map(p => ({ ...p, Stock: p.Stock || "0,00" }));
-            
-            generarCategorias();
-            mostrarProductos(inventario);
+                inventario = Object.values(mapa).filter(p => p.Nombre).map(p => ({ ...p, Stock: p.Stock || "0,00" }));
+                
+                generarCategorias();
+                mostrarProductos(inventario);
+            } catch(e) {
+                console.error("Error al cargar inventarios:", e);
+                document.getElementById('lista-productos').innerHTML = '<p style="text-align:center; grid-column:span 2; color: red; margin-top: 20px;">Error al leer los archivos. Revisa la consola.</p>';
+            }
         }
 
         // 4. Mostrar Productos
@@ -337,7 +341,7 @@
             const cont = document.getElementById('lista-productos');
             cont.innerHTML = '';
             if(lista.length === 0) { 
-                cont.innerHTML = '<p style="text-align:center; grid-column:span 2; color: var(--texto-claro); margin-top: 20px;">No se encontraron productos en precios.csv o unidad.csv</p>'; 
+                cont.innerHTML = '<p style="text-align:center; grid-column:span 2; color: var(--texto-claro); margin-top: 20px;">No se encontraron productos.</p>'; 
                 return; 
             }
 
